@@ -1,7 +1,14 @@
 [package]
-name = "mlp"
+name = "rust-mlp-backprop"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 plotly = "0.14.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
