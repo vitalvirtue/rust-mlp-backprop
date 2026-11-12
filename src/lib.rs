@@ -5,5 +5,7 @@ pub mod activation;
 pub mod data;
 pub mod loss;
 pub mod matrix;
+pub mod metrics;
 pub mod network;
 pub mod rng;
+pub mod train;
