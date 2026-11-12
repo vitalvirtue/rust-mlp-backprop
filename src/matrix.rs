@@ -322,6 +322,13 @@ impl Matrix {
         }
     }
 
+    /// Mutable view of the underlying data. Test-only: used by the numerical
+    /// gradient check to nudge individual parameters.
+    #[cfg(test)]
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [f64] {
+        &mut self.data
+    }
+
     /// Index of the largest element in each row (the predicted class).
     #[must_use]
     pub fn argmax_rows(&self) -> Vec<usize> {

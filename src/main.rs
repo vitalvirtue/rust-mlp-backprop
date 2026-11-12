@@ -2,7 +2,9 @@
 
 use std::process::ExitCode;
 
-use mlp::data::Dataset;
+use mlp::activation::Activation;
+use mlp::data::{Dataset, Standardizer, one_hot};
+use mlp::network::Mlp;
 use mlp::rng::Rng;
 
 fn main() -> ExitCode {
@@ -49,6 +51,33 @@ fn main() -> ExitCode {
             part.len(),
             part.class_counts()
         );
+    }
+
+    // Quick smoke test: full-batch gradient descent on a 4-8-3 tanh network.
+    let scaler = Standardizer::fit(split.train.features());
+    let train = split.train.standardized(&scaler);
+    let val = split.validation.standardized(&scaler);
+    let y_train = one_hot(train.labels(), train.n_classes());
+
+    let mut net = Mlp::new(&[4, 8, 3], Activation::Tanh, &mut Rng::new(0));
+    println!(
+        "\nTraining 4-8-3 tanh network ({} parameters):",
+        net.n_parameters()
+    );
+    for epoch in 1..=200 {
+        let loss = net.train_step(train.features(), &y_train, 0.1);
+        if epoch % 50 == 0 {
+            let predictions = net.predict(val.features());
+            let correct = predictions
+                .iter()
+                .zip(val.labels())
+                .filter(|(p, y)| p == y)
+                .count();
+            println!(
+                "  epoch {epoch:>3}  train loss {loss:.4}  val acc {correct}/{}",
+                val.len()
+            );
+        }
     }
     ExitCode::SUCCESS
 }
