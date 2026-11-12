@@ -1,24 +1,130 @@
-//! Command-line entry point for training and evaluating the MLP.
+//! Command-line entry point: trains one MLP configuration on Iris and
+//! reports its performance on the held-out test set.
+//!
+//! Example:
+//! ```text
+//! cargo run --release -- --hidden 16 --activation relu --lr 0.05 --epochs 300
+//! ```
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap::Parser;
+
 use mlp::activation::Activation;
-use mlp::data::{Dataset, Standardizer, one_hot};
-use mlp::network::Mlp;
+use mlp::data::Dataset;
+use mlp::metrics::ConfusionMatrix;
 use mlp::rng::Rng;
+use mlp::train::{TrainConfig, train};
+
+/// Train a from-scratch MLP on the Iris dataset.
+#[derive(Debug, Parser)]
+#[command(version, about)]
+struct Args {
+    /// Path to the UCI `iris.data` file.
+    #[arg(long, default_value = "data/iris.data")]
+    data: PathBuf,
+
+    /// Hidden layer sizes, comma separated (e.g. `8` or `16,8`).
+    #[arg(long, value_delimiter = ',', default_value = "8")]
+    hidden: Vec<usize>,
+
+    /// Hidden activation: sigmoid, tanh or relu.
+    #[arg(long, default_value = "tanh")]
+    activation: Activation,
+
+    /// Learning rate η.
+    #[arg(long, default_value_t = 0.05)]
+    lr: f64,
+
+    /// Number of epochs.
+    #[arg(long, default_value_t = 300)]
+    epochs: usize,
+
+    /// Mini-batch size.
+    #[arg(long, default_value_t = 16)]
+    batch_size: usize,
+
+    /// Random seed for the data split, initialization and shuffling.
+    #[arg(long, default_value_t = 42)]
+    seed: u64,
+
+    /// Print progress every N epochs.
+    #[arg(long, default_value_t = 50)]
+    log_every: usize,
+}
 
 fn main() -> ExitCode {
-    let dataset = match Dataset::iris("data/iris.data") {
+    let args = Args::parse();
+
+    let dataset = match Dataset::iris(&args.data) {
         Ok(ds) => ds,
         Err(e) => {
             eprintln!("error: {e}");
-            eprintln!("hint: download iris.data from UCI and place it at data/iris.data");
+            eprintln!(
+                "hint: place the UCI iris.data file at {}",
+                args.data.display()
+            );
             return ExitCode::FAILURE;
         }
     };
+    print_dataset_summary(&dataset);
 
+    let split = dataset.stratified_split(0.7, 0.15, &mut Rng::new(args.seed));
+    let (split, _scaler) = split.standardized();
     println!(
-        "Loaded {} samples, {} features, {} classes",
+        "\nSplit: train {} / validation {} / test {}",
+        split.train.len(),
+        split.validation.len(),
+        split.test.len()
+    );
+
+    let config = TrainConfig {
+        hidden_layers: args.hidden,
+        activation: args.activation,
+        learning_rate: args.lr,
+        epochs: args.epochs,
+        batch_size: args.batch_size,
+        seed: args.seed,
+    };
+    let sizes = config.layer_sizes(dataset.n_features(), dataset.n_classes());
+    println!(
+        "\nTraining {sizes:?} {} | lr {} | batch {} | {} epochs",
+        config.activation, config.learning_rate, config.batch_size, config.epochs
+    );
+
+    let (net, history) = train(&config, &split.train, &split.validation);
+    println!(
+        "{:>6} {:>11} {:>9} {:>11} {:>9}",
+        "epoch", "train_loss", "train_acc", "val_loss", "val_acc"
+    );
+    for m in history
+        .epochs
+        .iter()
+        .filter(|m| m.epoch % args.log_every.max(1) == 0 || m.epoch == history.last().epoch)
+    {
+        println!(
+            "{:>6} {:>11.5} {:>9.4} {:>11.5} {:>9.4}",
+            m.epoch, m.train_loss, m.train_accuracy, m.val_loss, m.val_accuracy
+        );
+    }
+    if history.diverged {
+        eprintln!("warning: training diverged (loss became NaN/inf); try a smaller --lr");
+    }
+
+    let predicted = net.predict(split.test.features());
+    let cm = ConfusionMatrix::new(split.test.labels(), &predicted, dataset.n_classes());
+    println!("\nTest set results:\n{}", cm.report(dataset.class_names()));
+    println!("\nConfusion matrix (rows = actual, columns = predicted):\n{cm}");
+    for (i, name) in dataset.class_names().iter().enumerate() {
+        println!("  {i} = {name}");
+    }
+    ExitCode::SUCCESS
+}
+
+fn print_dataset_summary(dataset: &Dataset) {
+    println!(
+        "Dataset: {} samples, {} features, {} classes",
         dataset.len(),
         dataset.n_features(),
         dataset.n_classes()
@@ -26,10 +132,8 @@ fn main() -> ExitCode {
     for (name, count) in dataset.class_names().iter().zip(dataset.class_counts()) {
         println!("  {name:<16} {count}");
     }
-
-    println!("\nFeature statistics:");
     println!(
-        "  {:<16} {:>6} {:>6} {:>6} {:>6}",
+        "\n  {:<16} {:>6} {:>6} {:>6} {:>6}",
         "feature", "min", "max", "mean", "std"
     );
     for s in dataset.feature_stats() {
@@ -38,46 +142,4 @@ fn main() -> ExitCode {
             s.name, s.min, s.max, s.mean, s.std
         );
     }
-
-    let split = dataset.stratified_split(0.7, 0.15, &mut Rng::new(42));
-    println!("\nStratified split (70/15/15):");
-    for (name, part) in [
-        ("train", &split.train),
-        ("validation", &split.validation),
-        ("test", &split.test),
-    ] {
-        println!(
-            "  {name:<10} {:>3} samples, per class {:?}",
-            part.len(),
-            part.class_counts()
-        );
-    }
-
-    // Quick smoke test: full-batch gradient descent on a 4-8-3 tanh network.
-    let scaler = Standardizer::fit(split.train.features());
-    let train = split.train.standardized(&scaler);
-    let val = split.validation.standardized(&scaler);
-    let y_train = one_hot(train.labels(), train.n_classes());
-
-    let mut net = Mlp::new(&[4, 8, 3], Activation::Tanh, &mut Rng::new(0));
-    println!(
-        "\nTraining 4-8-3 tanh network ({} parameters):",
-        net.n_parameters()
-    );
-    for epoch in 1..=200 {
-        let loss = net.train_step(train.features(), &y_train, 0.1);
-        if epoch % 50 == 0 {
-            let predictions = net.predict(val.features());
-            let correct = predictions
-                .iter()
-                .zip(val.labels())
-                .filter(|(p, y)| p == y)
-                .count();
-            println!(
-                "  epoch {epoch:>3}  train loss {loss:.4}  val acc {correct}/{}",
-                val.len()
-            );
-        }
-    }
-    ExitCode::SUCCESS
 }
