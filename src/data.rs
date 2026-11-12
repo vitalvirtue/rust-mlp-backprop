@@ -333,6 +333,21 @@ pub struct Split {
     pub test: Dataset,
 }
 
+impl Split {
+    /// Fits a [`Standardizer`] on the **training** split only and applies it
+    /// to all three splits.
+    #[must_use]
+    pub fn standardized(&self) -> (Split, Standardizer) {
+        let scaler = Standardizer::fit(self.train.features());
+        let split = Split {
+            train: self.train.standardized(&scaler),
+            validation: self.validation.standardized(&scaler),
+            test: self.test.standardized(&scaler),
+        };
+        (split, scaler)
+    }
+}
+
 /// Z-score standardization: `x' = (x - mean) / std`, per feature.
 ///
 /// Must be fitted on the training set only and then applied to every split;
