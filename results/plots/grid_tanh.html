@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+        
+</head>
+
+<body>
+    <div>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {"data":[{"type":"heatmap","colorscale":[[0.0,"#cde2fb"],[0.25,"#86b6ef"],[0.5,"#3987e5"],[0.75,"#1c5cab"],[1.0,"#0d366b"]],"hovertemplate":"Hidden neurons %{x}\u003cbr\u003eLearning rate %{y}\u003cbr\u003e%{z:.4f}\u003cextra\u003e\u003c/extra\u003e","reversescale":true,"x":["2","4","8","16","32"],"xgap":2,"y":["0.001","0.01","0.05","0.1"],"ygap":2,"z":[[0.8587366557724131,0.5396367433142568,0.45487478708577084,0.36475859321652027,0.34500697666292124],[0.24041822394043325,0.1483997793273611,0.11447383984211927,0.09136571420854141,0.08869415153307222],[0.06275993525043681,0.05625927100648722,0.052446900371822605,0.05000820458087629,0.047853121300991425],[0.05795621646521267,0.05765195450661535,0.05255618919961902,0.04990570090147688,0.04868688530750771]]}],"layout":{"title":{"text":"Validation loss, tanh","font":{"size":17,"color":"#0b0b0b"}},"legend":{"font":{"color":"#52514e"},"orientation":"h","y":-0.2},"margin":{"l":120,"r":30,"t":60,"b":80},"height":420,"font":{"family":"Inter, system-ui, -apple-system, Segoe UI, sans-serif","color":"#0b0b0b"},"paper_bgcolor":"#fcfcfb","plot_bgcolor":"#fcfcfb","xaxis":{"title":{"text":"Hidden neurons","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"yaxis":{"title":{"text":"Learning rate","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"annotations":[{"text":"0.859","font":{"size":12,"color":"#0b0b0b"},"showarrow":false,"x":0.0,"y":0.0},{"text":"0.540","font":{"size":12,"color":"#0b0b0b"},"showarrow":false,"x":1.0,"y":0.0},{"text":"0.455","font":{"size":12,"color":"#0b0b0b"},"showarrow":false,"x":2.0,"y":0.0},{"text":"0.365","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":3.0,"y":0.0},{"text":"0.345","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":4.0,"y":0.0},{"text":"0.240","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":0.0,"y":1.0},{"text":"0.148","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":1.0,"y":1.0},{"text":"0.114","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":2.0,"y":1.0},{"text":"0.091","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":3.0,"y":1.0},{"text":"0.089","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":4.0,"y":1.0},{"text":"0.063","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":0.0,"y":2.0},{"text":"0.056","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":1.0,"y":2.0},{"text":"0.052","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":2.0,"y":2.0},{"text":"0.050","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":3.0,"y":2.0},{"text":"0.048","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":4.0,"y":2.0},{"text":"0.058","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":0.0,"y":3.0},{"text":"0.058","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":1.0,"y":3.0},{"text":"0.053","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":2.0,"y":3.0},{"text":"0.050","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":3.0,"y":3.0},{"text":"0.049","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":4.0,"y":3.0}]},"config":{},"frames":null});
+        </script>
+    </div>
+</body>
+
+</html>
