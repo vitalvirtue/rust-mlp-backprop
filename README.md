@@ -26,11 +26,62 @@ Course assignment: BM5011 Artificial Neural Networks, Assignment 2.
   seconds.
 - Zero `unsafe`, `clippy -D warnings` clean, CI on every push.
 
-## Requirements
+## Installation
 
-- Rust 1.85 or newer (edition 2024). Install it from <https://rustup.rs>.
-- An internet connection when **viewing** the HTML charts (Plotly.js is loaded
-  from its CDN).
+The project needs **Rust 1.85 or newer** (edition 2024) and a C linker, which
+Rust uses to produce the final executable. Rust is installed with
+[rustup](https://rustup.rs), the official installer, which also installs
+`cargo` (the build tool) and `rustc` (the compiler).
+
+### Windows
+
+1. Install the C++ build tools that Rust's linker needs: download
+   [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+   and select the **"Desktop development with C++"** workload during setup.
+2. Install Rust, either by downloading and running `rustup-init.exe` from
+   <https://rustup.rs> (accept the default option), or from a terminal:
+   ```powershell
+   winget install Rustlang.Rustup
+   ```
+3. Close and reopen your terminal so that `cargo` is on the `PATH`.
+
+### macOS
+
+```bash
+xcode-select --install                                          # C linker (Command Line Tools)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust, accept the default option
+source "$HOME/.cargo/env"                                       # or open a new terminal
+```
+
+### Linux
+
+Install a C toolchain with your package manager, then Rust:
+
+```bash
+sudo apt install build-essential curl          # Debian / Ubuntu
+# sudo dnf group install development-tools     # Fedora
+# sudo pacman -S base-devel                    # Arch
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the default option
+source "$HOME/.cargo/env"                                        # or open a new terminal
+```
+
+### Check the installation
+
+```bash
+rustc --version   # must be 1.85.0 or newer
+cargo --version
+```
+
+If the version is older, update with `rustup update`.
+
+### Other requirements
+
+- An internet connection for the **first build** (Cargo downloads the two
+  dependencies from [crates.io](https://crates.io)) and when **viewing** the
+  HTML charts (Plotly.js is loaded from its CDN).
+- [Git](https://git-scm.com/downloads) to clone the repository, or download it
+  as a ZIP from GitHub (**Code → Download ZIP**).
 
 The only dependencies are [`clap`](https://crates.io/crates/clap) for command
 line parsing and [`plotly`](https://crates.io/crates/plotly) for chart
@@ -38,33 +89,79 @@ rendering; neither is involved in any network computation.
 
 ## Datasets
 
-| | Iris | Breast Cancer Wisconsin (Diagnostic) |
-|---|---|---|
-| File | `data/iris.data` (included) | `data/wdbc.data` (download, see below) |
-| Samples | 150 | 569 |
-| Features | 4 | 30 (10 nucleus measurements × mean / SE / worst) |
-| Classes | 3, balanced (50 / 50 / 50) | 2, imbalanced: benign 357 (62.7 %), malignant 212 (37.3 %) |
-| Split (70/15/15, stratified) | 105 / 24 / 21 | 398 / 86 / 85 |
-| Majority-class baseline (test) | 0.333 | 0.624 |
+|                                | Iris                        | Breast Cancer Wisconsin (Diagnostic)                       |
+| ------------------------------ | --------------------------- | ---------------------------------------------------------- |
+| File                           | `data/iris.data` (included) | `data/wdbc.data` (included)                                |
+| Samples                        | 150                         | 569                                                        |
+| Features                       | 4                           | 30 (10 nucleus measurements × mean / SE / worst)           |
+| Classes                        | 3, balanced (50 / 50 / 50)  | 2, imbalanced: benign 357 (62.7 %), malignant 212 (37.3 %) |
+| Split (70/15/15, stratified)   | 105 / 24 / 21               | 398 / 86 / 85                                              |
+| Majority-class baseline (test) | 0.333                       | 0.624                                                      |
 
-To get the Breast Cancer file, download the zip from
-<https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic>,
-extract `wdbc.data` and place it at `data/wdbc.data`. Each line is
+Both files are included in `data/`. The Breast Cancer file comes from
+<https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic>
+(`wdbc.data` inside the ZIP). Each line is
 `ID, diagnosis (M/B), 30 features`; the loader skips the ID and maps
 `B → benign (class 0)`, `M → malignant (class 1)`.
 
-## Quick start
+## Build and run
+
+### 1. Get the code
 
 ```bash
 git clone https://github.com/vitalvirtue/rust-mlp-backprop.git
 cd rust-mlp-backprop
+```
 
-cargo test                                         # 61 unit tests + 1 doc test
-cargo run --release                                # train one model on Iris, print test metrics
-cargo run --release -- --dataset breast-cancer     # same for Breast Cancer
-cargo run --release --bin experiments              # full study -> results/iris/
+All commands below are run from this folder (the one that contains
+`Cargo.toml`).
+
+### 2. Build
+
+```bash
+cargo build --release
+```
+
+The first build downloads and compiles the dependencies and takes one or two
+minutes; later builds only recompile what changed. Cargo writes everything it
+builds to the `target/` folder, which is not part of the repository and can be
+deleted at any time with `cargo clean`: the next build recreates it.
+
+The three executables end up in `target/release/`:
+
+| Executable       | What it does                                                         |
+| ---------------- | -------------------------------------------------------------------- |
+| `mlp`            | Trains one model and prints its test-set metrics                     |
+| `experiments`    | Runs the full hyper-parameter study and writes `results/<dataset>/`  |
+| `worked_example` | Prints one fully worked training step with every intermediate number |
+
+On Windows they have an `.exe` extension (for example `target\release\mlp.exe`).
+
+### 3. Test
+
+```bash
+cargo test        # 61 unit tests + 1 doc test, including the gradient check
+```
+
+### 4. Run
+
+`cargo run` builds the program if needed and then starts it. Arguments for the
+program go after `--`:
+
+```bash
+cargo run --release                                                # train one model on Iris
+cargo run --release -- --dataset breast-cancer                     # same for Breast Cancer
+cargo run --release --bin experiments                              # full study -> results/iris/
 cargo run --release --bin experiments -- --dataset breast-cancer   # -> results/breast_cancer/
-cargo run --release --bin worked_example           # numeric walkthrough -> results/iris/worked_example.md
+cargo run --release --bin worked_example                           # -> results/iris/worked_example.md
+cargo run --release -- --help                                      # list all options
+```
+
+The built executables can also be started directly, without Cargo:
+
+```bash
+./target/release/mlp --dataset breast-cancer --patience 30   # macOS / Linux
+.\target\release\mlp.exe --dataset breast-cancer --patience 30   # Windows (PowerShell)
 ```
 
 Always use `--release` for training: it is roughly 10 to 50 times faster than a
@@ -77,18 +174,18 @@ cargo run --release -- --hidden 16 --activation relu --lr 0.05 --epochs 300
 cargo run --release -- --dataset breast-cancer --hidden 16 --activation relu --patience 30
 ```
 
-| Option | Default | Meaning |
-|---|---|---|
-| `--dataset` | `iris` | `iris` or `breast-cancer` |
-| `--data` | `data/iris.data` / `data/wdbc.data` | Path to the data file |
-| `--hidden` | `8` | Hidden layer sizes, comma separated (`16,8` = two hidden layers) |
-| `--activation` | `tanh` | `sigmoid`, `tanh` or `relu` |
-| `--lr` | `0.05` | Learning rate η |
-| `--epochs` | `300` | Passes over the training set |
-| `--batch-size` | `16` | Mini-batch size |
-| `--seed` | `42` | Seed for split, initialization and shuffling |
-| `--patience` | off | Early stopping: stop after N epochs without a better validation loss and keep the best weights |
-| `--log-every` | `50` | Print progress every N epochs |
+| Option         | Default                             | Meaning                                                                                        |
+| -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `--dataset`    | `iris`                              | `iris` or `breast-cancer`                                                                      |
+| `--data`       | `data/iris.data` / `data/wdbc.data` | Path to the data file                                                                          |
+| `--hidden`     | `8`                                 | Hidden layer sizes, comma separated (`16,8` = two hidden layers)                               |
+| `--activation` | `tanh`                              | `sigmoid`, `tanh` or `relu`                                                                    |
+| `--lr`         | `0.05`                              | Learning rate η                                                                                |
+| `--epochs`     | `300`                               | Passes over the training set                                                                   |
+| `--batch-size` | `16`                                | Mini-batch size                                                                                |
+| `--seed`       | `42`                                | Seed for split, initialization and shuffling                                                   |
+| `--patience`   | off                                 | Early stopping: stop after N epochs without a better validation loss and keep the best weights |
+| `--log-every`  | `50`                                | Print progress every N epochs                                                                  |
 
 ### Running the experiments
 
@@ -102,12 +199,12 @@ rates (0.001, 0.01, 0.05, 0.1) × 5 hidden sizes (2, 4, 8, 16, 32) × 5 seeds,
 selects the best configuration by mean validation loss, and evaluates it once
 on the held-out test set. Outputs go to `results/<dataset>/`:
 
-| File | Content |
-|---|---|
-| `dashboard.html` | All charts and tables on one interactive page |
-| `plots/*.html` | Each chart on its own page; use the camera icon to save a PNG |
-| `runs.csv` | One row per run (configuration × seed) |
-| `summary.csv` | One row per configuration, mean ± std over seeds |
+| File             | Content                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `dashboard.html` | All charts and tables on one interactive page                                            |
+| `plots/*.html`   | Each chart on its own page; use the camera icon to save a PNG                            |
+| `runs.csv`       | One row per run (configuration × seed)                                                   |
+| `summary.csv`    | One row per configuration, mean ± std over seeds                                         |
 | `test_report.md` | Markdown tables: dataset summary, baseline, grid results, test metrics, confusion matrix |
 
 ### Numerical walkthrough
@@ -123,15 +220,15 @@ prints every matrix: `Z¹`, `A¹`, `Z²`, softmax `P`, the loss, `δ²`, `∂L/�
 
 ## Method
 
-| | |
-|---|---|
-| Split | Stratified 70 / 15 / 15, fixed seed |
-| Preprocessing | Z-score standardization fitted on the training set only |
-| Architecture | inputs → hidden (activation) → classes (softmax); 4→h→3 for Iris, 30→h→2 for Breast Cancer |
-| Initialization | He for ReLU, Xavier/Glorot for sigmoid and tanh; zero biases |
-| Loss | Mean categorical cross-entropy |
-| Optimizer | Mini-batch gradient descent, reshuffled every epoch |
-| Model selection | Lowest mean validation loss over 5 seeds; the test set is used once |
+|                 |                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| Split           | Stratified 70 / 15 / 15, fixed seed                                                        |
+| Preprocessing   | Z-score standardization fitted on the training set only                                    |
+| Architecture    | inputs → hidden (activation) → classes (softmax); 4→h→3 for Iris, 30→h→2 for Breast Cancer |
+| Initialization  | He for ReLU, Xavier/Glorot for sigmoid and tanh; zero biases                               |
+| Loss            | Mean categorical cross-entropy                                                             |
+| Optimizer       | Mini-batch gradient descent, reshuffled every epoch                                        |
+| Model selection | Lowest mean validation loss over 5 seeds; the test set is used once                        |
 
 Forward pass for a batch `X` (N × n₀):
 
@@ -179,12 +276,12 @@ results/<dataset>/        generated reports and charts
 
 ## Results at a glance
 
-| | Iris | Breast Cancer |
-|---|---|---|
-| Best configuration | ReLU, 16 hidden, lr 0.1 | ReLU, 16 hidden, lr 0.1 |
-| Test accuracy | 0.952 | 0.976 (0.988 with early stopping) |
-| Macro F1 | 0.952 | 0.975 |
-| Majority-class baseline | 0.333 | 0.624 |
+|                         | Iris                    | Breast Cancer                     |
+| ----------------------- | ----------------------- | --------------------------------- |
+| Best configuration      | ReLU, 16 hidden, lr 0.1 | ReLU, 16 hidden, lr 0.1           |
+| Test accuracy           | 0.952                   | 0.976 (0.988 with early stopping) |
+| Macro F1                | 0.952                   | 0.975                             |
+| Majority-class baseline | 0.333                   | 0.624                             |
 
 Full tables: `results/iris/test_report.md` and `results/breast_cancer/test_report.md`.
 Open `results/<dataset>/dashboard.html` in a browser for the interactive charts.
@@ -200,8 +297,8 @@ cargo doc --open                           # browse the API documentation
 
 ## Dataset citations
 
-- R. A. Fisher, *Iris*, UCI Machine Learning Repository, 1936.
+- R. A. Fisher, _Iris_, UCI Machine Learning Repository, 1936.
   <https://doi.org/10.24432/C56C76>. CC BY 4.0.
-- W. Wolberg, O. Mangasarian, N. Street, W. Street, *Breast Cancer Wisconsin
-  (Diagnostic)*, UCI Machine Learning Repository, 1993.
+- W. Wolberg, O. Mangasarian, N. Street, W. Street, _Breast Cancer Wisconsin
+  (Diagnostic)_, UCI Machine Learning Repository, 1993.
   <https://doi.org/10.24432/C5DW2B>. CC BY 4.0.
