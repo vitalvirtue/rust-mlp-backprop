@@ -1,5 +1,5 @@
 //! Runs the full hyper-parameter study required by the assignment and writes
-//! every artefact the report needs into `results/`:
+//! every artefact the report needs into `results/<dataset>/`:
 //!
 //! - `runs.csv`        one row per training run (configuration × seed)
 //! - `summary.csv`     one row per configuration, averaged over seeds
@@ -9,6 +9,7 @@
 //!
 //! ```text
 //! cargo run --release --bin experiments
+//! cargo run --release --bin experiments -- --dataset breast-cancer
 //! ```
 
 use std::error::Error;
@@ -20,7 +21,7 @@ use std::time::Instant;
 use clap::Parser;
 
 use mlp::activation::Activation;
-use mlp::data::{Dataset, Split};
+use mlp::data::{Dataset, DatasetKind, Split};
 use mlp::experiment::{CellSummary, GridSpec, aggregate, best_cell, run_grid};
 use mlp::metrics::{ClassificationReport, ConfusionMatrix};
 use mlp::plots::{
@@ -38,12 +39,15 @@ const SPLIT_SEED: u64 = 42;
 #[derive(Debug, Parser)]
 #[command(about)]
 struct Args {
-    /// Path to the UCI `iris.data` file.
-    #[arg(long, default_value = "data/iris.data")]
-    data: PathBuf,
-    /// Output directory.
-    #[arg(long, default_value = "results")]
-    out: PathBuf,
+    /// Dataset: iris or breast-cancer.
+    #[arg(long, default_value = "iris")]
+    dataset: DatasetKind,
+    /// Path to the data file [default: data/iris.data or data/wdbc.data].
+    #[arg(long)]
+    data: Option<PathBuf>,
+    /// Output directory [default: results/<dataset>].
+    #[arg(long)]
+    out: Option<PathBuf>,
     /// Epochs per run.
     #[arg(long, default_value_t = 300)]
     epochs: usize,
@@ -57,7 +61,17 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let dataset = Dataset::iris(&args.data)?;
+    let kind = args.dataset;
+    let data_path = args
+        .data
+        .unwrap_or_else(|| PathBuf::from(kind.default_path()));
+    let out = args
+        .out
+        .unwrap_or_else(|| Path::new("results").join(kind.slug()));
+    let dataset = kind
+        .load(&data_path)
+        .map_err(|e| format!("{}: {e}", data_path.display()))?;
+    println!("Dataset: {}", kind.display_name());
     let (split, _) = dataset
         .stratified_split(0.7, 0.15, &mut Rng::new(SPLIT_SEED))
         .standardized();
@@ -78,9 +92,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Done in {:.2?}", started.elapsed());
 
     let cells = aggregate(&runs);
-    fs::create_dir_all(args.out.join("plots"))?;
-    write_runs_csv(&args.out.join("runs.csv"), &runs)?;
-    write_summary_csv(&args.out.join("summary.csv"), &cells)?;
+    fs::create_dir_all(out.join("plots"))?;
+    write_runs_csv(&out.join("runs.csv"), &runs)?;
+    write_summary_csv(&out.join("summary.csv"), &cells)?;
 
     let best = best_cell(&cells, |_| true).ok_or("every configuration diverged")?;
     println!(
@@ -109,17 +123,51 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\nTest set, best overall model:\n{}", overall.report);
     println!("\n{}", overall.confusion);
 
-    write_markdown(
-        &args.out.join("test_report.md"),
-        &spec,
-        &cells,
+    // Majority-class baseline: the accuracy of a "model" that always predicts
+    // the most common training class. With imbalanced data this is far above
+    // chance, so a good accuracy must be judged against it.
+    let (majority, _) = split.train.majority_class();
+    let baseline_accuracy = split
+        .test
+        .labels()
+        .iter()
+        .filter(|&&y| y == majority)
+        .count() as f64
+        / split.test.len() as f64;
+    let study = Study {
+        kind,
+        spec: &spec,
+        cells: &cells,
         best,
-        &finals,
-        &dataset,
-    )?;
-    build_dashboard(&args.out, &spec, &cells, best, &finals, &dataset, n_runs)?;
-    println!("\nWrote results to {}", args.out.display());
+        finals: &finals,
+        dataset: &dataset,
+        split: &split,
+        n_runs,
+        baseline_class: &dataset.class_names()[majority],
+        baseline_accuracy,
+    };
+    println!(
+        "Baseline (always `{}`): test accuracy {baseline_accuracy:.4}",
+        study.baseline_class
+    );
+    write_markdown(&out.join("test_report.md"), &study)?;
+    build_dashboard(&out, &study)?;
+    println!("\nWrote results to {}", out.display());
     Ok(())
+}
+
+/// Everything the report writers need, bundled to keep signatures short.
+struct Study<'a> {
+    kind: DatasetKind,
+    spec: &'a GridSpec,
+    cells: &'a [CellSummary],
+    best: &'a CellSummary,
+    finals: &'a [FinalModel],
+    dataset: &'a Dataset,
+    split: &'a Split,
+    n_runs: usize,
+    baseline_class: &'a str,
+    baseline_accuracy: f64,
 }
 
 /// A configuration retrained once and evaluated on the test set.
@@ -139,6 +187,7 @@ impl FinalModel {
             epochs: spec.epochs,
             batch_size: spec.batch_size,
             seed: spec.seeds[0],
+            patience: None,
         };
         let (net, history) = train(&config, &split.train, &split.validation);
         let predicted = net.predict(split.test.features());
@@ -215,15 +264,44 @@ fn cell_label(c: &CellSummary) -> String {
     format!("{} · h={} · lr={}", c.activation, c.hidden, c.learning_rate)
 }
 
-fn write_markdown(
-    path: &Path,
-    spec: &GridSpec,
-    cells: &[CellSummary],
-    best: &CellSummary,
-    finals: &[FinalModel],
-    dataset: &Dataset,
-) -> std::io::Result<()> {
-    let mut md = String::from("# Experiment results\n\n");
+fn write_markdown(path: &Path, study: &Study<'_>) -> std::io::Result<()> {
+    let Study {
+        spec,
+        cells,
+        best,
+        finals,
+        dataset,
+        split,
+        ..
+    } = *study;
+    let mut md = format!("# Experiment results: {}\n\n", study.kind.display_name());
+    let counts = |d: &Dataset| -> String {
+        d.class_names()
+            .iter()
+            .zip(d.class_counts())
+            .map(|(n, c)| format!("{n} {c}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let _ = writeln!(
+        md,
+        "{} samples, {} features, {} classes ({}). Stratified split: train {} ({}), validation {} ({}), test {} ({}).\n",
+        dataset.len(),
+        dataset.n_features(),
+        dataset.n_classes(),
+        counts(dataset),
+        split.train.len(),
+        counts(&split.train),
+        split.validation.len(),
+        counts(&split.validation),
+        split.test.len(),
+        counts(&split.test)
+    );
+    let _ = writeln!(
+        md,
+        "Majority-class baseline (always predict `{}`): test accuracy **{:.4}**.\n",
+        study.baseline_class, study.baseline_accuracy
+    );
     let _ = writeln!(
         md,
         "Grid: activations {:?}, learning rates {:?}, hidden sizes {:?}; {} seeds × {} epochs, batch size {}.\n",
@@ -298,12 +376,17 @@ fn write_markdown(
     }
     let _ = writeln!(
         md,
-        "| **macro avg** | {:.4} | {:.4} | {:.4} | {} |\n\nAccuracy: **{:.4}**\n",
+        "| **macro avg** | {:.4} | {:.4} | {:.4} | {} |\n| **weighted avg** | {:.4} | {:.4} | {:.4} | {} |\n\nAccuracy: **{:.4}** (majority-class baseline {:.4})\n",
         overall.report.macro_precision,
         overall.report.macro_recall,
         overall.report.macro_f1,
         overall.confusion.total(),
-        overall.report.accuracy
+        overall.report.weighted_precision,
+        overall.report.weighted_recall,
+        overall.report.weighted_f1,
+        overall.confusion.total(),
+        overall.report.accuracy,
+        study.baseline_accuracy
     );
     md.push_str("### Confusion matrix (rows = actual, columns = predicted)\n\n| |");
     for name in dataset.class_names() {
@@ -322,20 +405,29 @@ fn write_markdown(
     fs::write(path, md)
 }
 
-fn build_dashboard(
-    out: &Path,
-    spec: &GridSpec,
-    cells: &[CellSummary],
-    best: &CellSummary,
-    finals: &[FinalModel],
-    dataset: &Dataset,
-    n_runs: usize,
-) -> std::io::Result<()> {
+fn build_dashboard(out: &Path, study: &Study<'_>) -> std::io::Result<()> {
+    let Study {
+        spec,
+        cells,
+        best,
+        finals,
+        dataset,
+        split,
+        n_runs,
+        ..
+    } = *study;
     let mut dash = Dashboard::new(
-        "MLP from scratch: Iris experiments",
+        format!("MLP from scratch: {}", study.kind.display_name()),
         format!(
-            "{n_runs} training runs · {} activations × {} learning rates × {} hidden sizes × {} seeds · {} epochs · batch {}. \
+            "{} samples · {} features · {} classes · split {}/{}/{}. \
+             {n_runs} training runs · {} activations × {} learning rates × {} hidden sizes × {} seeds · {} epochs · batch {}. \
              Curves are averaged over seeds; dashed = train, solid = validation.",
+            dataset.len(),
+            dataset.n_features(),
+            dataset.n_classes(),
+            split.train.len(),
+            split.validation.len(),
+            split.test.len(),
             spec.activations.len(),
             spec.learning_rates.len(),
             spec.hidden_sizes.len(),
@@ -609,17 +701,30 @@ fn build_dashboard(
                 m.support.to_string(),
             ]
         })
-        .chain(std::iter::once(vec![
-            "macro avg".into(),
-            format!("{:.4}", overall.report.macro_precision),
-            format!("{:.4}", overall.report.macro_recall),
-            format!("{:.4}", overall.report.macro_f1),
-            overall.confusion.total().to_string(),
-        ]))
+        .chain([
+            vec![
+                "macro avg".into(),
+                format!("{:.4}", overall.report.macro_precision),
+                format!("{:.4}", overall.report.macro_recall),
+                format!("{:.4}", overall.report.macro_f1),
+                overall.confusion.total().to_string(),
+            ],
+            vec![
+                "weighted avg".into(),
+                format!("{:.4}", overall.report.weighted_precision),
+                format!("{:.4}", overall.report.weighted_recall),
+                format!("{:.4}", overall.report.weighted_f1),
+                overall.confusion.total().to_string(),
+            ],
+        ])
         .collect();
     dash.add_html(
         "Best model: classification report (test set)",
-        &format!("Accuracy {:.4}.", overall.report.accuracy),
+        &format!(
+            "Accuracy {:.4}, against a majority-class baseline of {:.4} (always predicting `{}`). \
+             Macro averages weight every class equally; weighted averages weight them by support.",
+            overall.report.accuracy, study.baseline_accuracy, study.baseline_class
+        ),
         html_table(
             &["class", "precision", "recall", "F1", "support"],
             &rows,

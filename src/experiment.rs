@@ -56,6 +56,7 @@ impl GridSpec {
                             epochs: self.epochs,
                             batch_size: self.batch_size,
                             seed,
+                            patience: None,
                         });
                     }
                 }

@@ -1,9 +1,10 @@
-//! Command-line entry point: trains one MLP configuration on Iris and
+//! Command-line entry point: trains one MLP configuration on a dataset and
 //! reports its performance on the held-out test set.
 //!
-//! Example:
+//! Examples:
 //! ```text
 //! cargo run --release -- --hidden 16 --activation relu --lr 0.05 --epochs 300
+//! cargo run --release -- --dataset breast-cancer --hidden 16 --lr 0.01
 //! ```
 
 use std::path::PathBuf;
@@ -12,18 +13,22 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use mlp::activation::Activation;
-use mlp::data::Dataset;
+use mlp::data::{Dataset, DatasetKind};
 use mlp::metrics::ConfusionMatrix;
 use mlp::rng::Rng;
 use mlp::train::{TrainConfig, train};
 
-/// Train a from-scratch MLP on the Iris dataset.
+/// Train a from-scratch MLP on Iris or Breast Cancer Wisconsin.
 #[derive(Debug, Parser)]
 #[command(version, about)]
 struct Args {
-    /// Path to the UCI `iris.data` file.
-    #[arg(long, default_value = "data/iris.data")]
-    data: PathBuf,
+    /// Dataset: iris or breast-cancer.
+    #[arg(long, default_value = "iris")]
+    dataset: DatasetKind,
+
+    /// Path to the data file [default: data/iris.data or data/wdbc.data].
+    #[arg(long)]
+    data: Option<PathBuf>,
 
     /// Hidden layer sizes, comma separated (e.g. `8` or `16,8`).
     #[arg(long, value_delimiter = ',', default_value = "8")]
@@ -49,6 +54,11 @@ struct Args {
     #[arg(long, default_value_t = 42)]
     seed: u64,
 
+    /// Early stopping: stop after N epochs without a better validation loss
+    /// and keep the best weights.
+    #[arg(long)]
+    patience: Option<usize>,
+
     /// Print progress every N epochs.
     #[arg(long, default_value_t = 50)]
     log_every: usize,
@@ -57,17 +67,23 @@ struct Args {
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    let dataset = match Dataset::iris(&args.data) {
+    let path = args
+        .data
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(args.dataset.default_path()));
+    let dataset = match args.dataset.load(&path) {
         Ok(ds) => ds,
         Err(e) => {
             eprintln!("error: {e}");
             eprintln!(
-                "hint: place the UCI iris.data file at {}",
-                args.data.display()
+                "hint: download the {} data file from UCI and place it at {}",
+                args.dataset.display_name(),
+                path.display()
             );
             return ExitCode::FAILURE;
         }
     };
+    println!("{}", args.dataset.display_name());
     print_dataset_summary(&dataset);
 
     let split = dataset.stratified_split(0.7, 0.15, &mut Rng::new(args.seed));
@@ -86,6 +102,7 @@ fn main() -> ExitCode {
         epochs: args.epochs,
         batch_size: args.batch_size,
         seed: args.seed,
+        patience: args.patience,
     };
     let sizes = config.layer_sizes(dataset.n_features(), dataset.n_classes());
     println!(
@@ -108,9 +125,27 @@ fn main() -> ExitCode {
             m.epoch, m.train_loss, m.train_accuracy, m.val_loss, m.val_accuracy
         );
     }
+    if let Some(epoch) = history.restored_epoch {
+        println!(
+            "Early stopping: restored the weights from epoch {epoch} (lowest validation loss)"
+        );
+    }
     if history.diverged {
         eprintln!("warning: training diverged (loss became NaN/inf); try a smaller --lr");
     }
+
+    let (majority, _) = split.train.majority_class();
+    let baseline = split
+        .test
+        .labels()
+        .iter()
+        .filter(|&&y| y == majority)
+        .count() as f64
+        / split.test.len() as f64;
+    println!(
+        "\nBaseline (always predict `{}`): test accuracy {baseline:.4}",
+        dataset.class_names()[majority]
+    );
 
     let predicted = net.predict(split.test.features());
     let cm = ConfusionMatrix::new(split.test.labels(), &predicted, dataset.n_classes());
@@ -130,15 +165,16 @@ fn print_dataset_summary(dataset: &Dataset) {
         dataset.n_classes()
     );
     for (name, count) in dataset.class_names().iter().zip(dataset.class_counts()) {
-        println!("  {name:<16} {count}");
+        let share = count as f64 / dataset.len() as f64 * 100.0;
+        println!("  {name:<16} {count:>4} ({share:.1}%)");
     }
     println!(
-        "\n  {:<16} {:>6} {:>6} {:>6} {:>6}",
+        "\n  {:<24} {:>9} {:>9} {:>9} {:>9}",
         "feature", "min", "max", "mean", "std"
     );
     for s in dataset.feature_stats() {
         println!(
-            "  {:<16} {:>6.2} {:>6.2} {:>6.2} {:>6.2}",
+            "  {:<24} {:>9.4} {:>9.4} {:>9.4} {:>9.4}",
             s.name, s.min, s.max, s.mean, s.std
         );
     }

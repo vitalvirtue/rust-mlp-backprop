@@ -22,6 +22,10 @@ pub struct TrainConfig {
     pub batch_size: usize,
     /// Seed for weight initialization and shuffling.
     pub seed: u64,
+    /// Early stopping: stop after this many epochs without a new best
+    /// validation loss, and return the weights from the best epoch.
+    /// `None` trains for all `epochs`.
+    pub patience: Option<usize>,
 }
 
 impl Default for TrainConfig {
@@ -33,6 +37,7 @@ impl Default for TrainConfig {
             epochs: 300,
             batch_size: 16,
             seed: 42,
+            patience: None,
         }
     }
 }
@@ -71,6 +76,8 @@ pub struct History {
     pub epochs: Vec<EpochMetrics>,
     /// `true` if the loss became NaN or infinite and training was stopped.
     pub diverged: bool,
+    /// With early stopping: the epoch whose weights were returned.
+    pub restored_epoch: Option<usize>,
 }
 
 impl History {
@@ -137,6 +144,8 @@ pub fn train(config: &TrainConfig, train: &Dataset, validation: &Dataset) -> (Ml
     history.epochs.push(record(&net, 0));
 
     let mut order: Vec<usize> = (0..train.len()).collect();
+    // Best weights seen so far, only tracked when early stopping is enabled.
+    let mut best: Option<(f64, usize, Mlp)> = None;
     for epoch in 1..=config.epochs {
         rng.shuffle(&mut order);
         for batch in order.chunks(config.batch_size) {
@@ -151,6 +160,20 @@ pub fn train(config: &TrainConfig, train: &Dataset, validation: &Dataset) -> (Ml
             history.diverged = true;
             break;
         }
+        if let Some(patience) = config.patience {
+            let improved = best
+                .as_ref()
+                .is_none_or(|(loss, _, _)| metrics.val_loss < *loss);
+            if improved {
+                best = Some((metrics.val_loss, epoch, net.clone()));
+            } else if epoch - best.as_ref().map_or(0, |b| b.1) >= patience {
+                break;
+            }
+        }
+    }
+    if let Some((_, epoch, best_net)) = best {
+        net = best_net;
+        history.restored_epoch = Some(epoch);
     }
     (net, history)
 }
@@ -162,14 +185,19 @@ mod tests {
 
     /// Two well-separated Gaussian blobs.
     fn blobs(n_per_class: usize, seed: u64) -> Dataset {
+        blobs_with(n_per_class, seed, 2.0, 0.5)
+    }
+
+    /// Two Gaussian blobs centred at ±`centre` with standard deviation `noise`.
+    fn blobs_with(n_per_class: usize, seed: u64, centre: f64, noise: f64) -> Dataset {
         let mut rng = Rng::new(seed);
         let mut values = Vec::new();
         let mut labels = Vec::new();
         for class in 0..2 {
-            let centre = if class == 0 { -2.0 } else { 2.0 };
+            let c = if class == 0 { -centre } else { centre };
             for _ in 0..n_per_class {
-                values.push(centre + 0.5 * rng.normal());
-                values.push(centre + 0.5 * rng.normal());
+                values.push(c + noise * rng.normal());
+                values.push(c + noise * rng.normal());
                 labels.push(class);
             }
         }
@@ -193,6 +221,28 @@ mod tests {
         assert!(!history.diverged);
         assert!(history.last().train_loss < history.epochs[0].train_loss);
         assert!(history.last().val_accuracy > 0.95);
+    }
+
+    #[test]
+    fn early_stopping_stops_and_restores_best_epoch() {
+        // Heavily overlapping classes and a large network: the validation
+        // loss soon starts rising while the training loss keeps falling.
+        let config = TrainConfig {
+            hidden_layers: vec![64],
+            epochs: 2000,
+            learning_rate: 0.1,
+            patience: Some(20),
+            ..TrainConfig::default()
+        };
+        let (train_set, val_set) = (blobs_with(20, 1, 0.3, 1.0), blobs_with(20, 2, 0.3, 1.0));
+        let (net, history) = train(&config, &train_set, &val_set);
+        let restored = history.restored_epoch.expect("early stopping was enabled");
+        let best = history.best_by_val_loss().unwrap();
+        assert_eq!(restored, best.epoch);
+        assert!(history.last().epoch < 2000, "should stop early");
+        // The returned network really is the one from the best epoch.
+        let targets = one_hot(val_set.labels(), 2);
+        assert!((net.loss(val_set.features(), &targets) - best.val_loss).abs() < 1e-12);
     }
 
     #[test]

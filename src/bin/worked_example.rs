@@ -2,7 +2,8 @@
 //! intermediate number: forward pass, loss, backpropagated gradients and the
 //! weight update. This is the "numerical example" the report requires.
 //!
-//! The output is written to `results/worked_example.md` and echoed to stdout.
+//! The output is written to `results/<dataset>/worked_example.md` and echoed
+//! to stdout.
 //!
 //! ```text
 //! cargo run --release --bin worked_example
@@ -16,7 +17,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use mlp::activation::Activation;
-use mlp::data::{Dataset, one_hot};
+use mlp::data::{DatasetKind, one_hot};
 use mlp::loss::cross_entropy;
 use mlp::matrix::Matrix;
 use mlp::network::Mlp;
@@ -26,12 +27,15 @@ use mlp::rng::Rng;
 #[derive(Debug, Parser)]
 #[command(about)]
 struct Args {
-    /// Path to the UCI `iris.data` file.
-    #[arg(long, default_value = "data/iris.data")]
-    data: PathBuf,
-    /// Output Markdown file.
-    #[arg(long, default_value = "results/worked_example.md")]
-    out: PathBuf,
+    /// Dataset: iris or breast-cancer.
+    #[arg(long, default_value = "iris")]
+    dataset: DatasetKind,
+    /// Path to the data file [default: data/iris.data or data/wdbc.data].
+    #[arg(long)]
+    data: Option<PathBuf>,
+    /// Output Markdown file [default: results/<dataset>/worked_example.md].
+    #[arg(long)]
+    out: Option<PathBuf>,
     /// Hidden neurons (kept small so the matrices stay readable).
     #[arg(long, default_value_t = 3)]
     hidden: usize,
@@ -64,7 +68,16 @@ impl Doc {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let dataset = Dataset::iris(&args.data)?;
+    let data_path = args
+        .data
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(args.dataset.default_path()));
+    let out = args.out.clone().unwrap_or_else(|| {
+        PathBuf::from("results")
+            .join(args.dataset.slug())
+            .join("worked_example.md")
+    });
+    let dataset = args.dataset.load(&data_path)?;
     let mut rng = Rng::new(args.seed);
     let (split, scaler) = dataset.stratified_split(0.7, 0.15, &mut rng).standardized();
 
@@ -96,8 +109,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut doc = Doc(String::new());
     let _ = writeln!(
         doc.0,
-        "# Worked example: one training step\n\nNetwork {:?}, hidden activation **{act}**, \
+        "# Worked example: one training step ({})\n\nNetwork {:?}, hidden activation **{act}**, \
          softmax output, cross-entropy loss, learning rate η = {}, mini-batch of N = 2 samples.",
+        args.dataset.display_name(),
         net.layer_sizes(),
         args.lr
     );
@@ -165,13 +179,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .iter()
         .map(|z| format!("{:.4}", (z - max).exp()))
         .collect();
+    let probs: Vec<String> = p.row(0).iter().map(|v| format!("{v:.4}")).collect();
     doc.para(&format!(
         "P = softmax(Z²), row-wise: pₖ = e^(zₖ − max z) / Σⱼ e^(zⱼ − max z). For sample 1 the \
-         shifted exponentials are [{}], which normalize to [{:.4}, {:.4}, {:.4}].",
+         shifted exponentials are [{}], which normalize to [{}].",
         exps.join(", "),
-        p[(0, 0)],
-        p[(0, 1)],
-        p[(0, 2)]
+        probs.join(", ")
     ));
     doc.matrix("P", p);
 
@@ -258,11 +271,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         new_loss - loss
     ));
 
-    if let Some(dir) = args.out.parent() {
+    if let Some(dir) = out.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(&args.out, &doc.0)?;
+    fs::write(&out, &doc.0)?;
     println!("{}", doc.0);
-    eprintln!("Wrote {}", args.out.display());
+    eprintln!("Wrote {}", out.display());
     Ok(())
 }
