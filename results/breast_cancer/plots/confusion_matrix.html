@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+        
+</head>
+
+<body>
+    <div>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {"data":[{"type":"heatmap","colorscale":[[0.0,"#cde2fb"],[0.25,"#86b6ef"],[0.5,"#3987e5"],[0.75,"#1c5cab"],[1.0,"#0d366b"]],"hovertemplate":"Predicted class %{x}\u003cbr\u003eActual class %{y}\u003cbr\u003e%{z:.4f}\u003cextra\u003e\u003c/extra\u003e","reversescale":false,"x":["benign","malignant"],"xgap":2,"y":["malignant","benign"],"ygap":2,"z":[[2.0,30.0],[53.0,0.0]]}],"layout":{"title":{"text":"Confusion matrix (test set)","font":{"size":17,"color":"#0b0b0b"}},"legend":{"font":{"color":"#52514e"},"orientation":"h","y":-0.2},"margin":{"l":120,"r":30,"t":60,"b":80},"height":420,"font":{"family":"Inter, system-ui, -apple-system, Segoe UI, sans-serif","color":"#0b0b0b"},"paper_bgcolor":"#fcfcfb","plot_bgcolor":"#fcfcfb","xaxis":{"title":{"text":"Predicted class","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"yaxis":{"title":{"text":"Actual class","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"annotations":[{"text":"2","font":{"size":12,"color":"#0b0b0b"},"showarrow":false,"x":0.0,"y":0.0},{"text":"30","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":1.0,"y":0.0},{"text":"53","font":{"size":12,"color":"#ffffff"},"showarrow":false,"x":0.0,"y":1.0},{"text":"0","font":{"size":12,"color":"#0b0b0b"},"showarrow":false,"x":1.0,"y":1.0}]},"config":{},"frames":null});
+        </script>
+    </div>
+</body>
+
+</html>

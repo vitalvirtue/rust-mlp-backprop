@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+        
+</head>
+
+<body>
+    <div>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","name":"sigmoid (lr = 0.1)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.9883720930232558,0.9883720930232558,0.9883720930232558,0.9883720930232558,0.9883720930232558],"hovertemplate":"sigmoid (lr = 0.1): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#2a78d6"},"line":{"width":2.0,"color":"#2a78d6"},"error_y":{"type":"data","array":[0.0,0.0,0.0,0.0,0.0],"color":"#2a78d6","thickness":1.5,"width":4}},{"type":"scatter","name":"tanh (lr = 0.01)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.9860465116279069,0.9883720930232558,0.9883720930232558,0.9883720930232558,0.9883720930232558],"hovertemplate":"tanh (lr = 0.01): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#eb6834"},"line":{"width":2.0,"color":"#eb6834"},"error_y":{"type":"data","array":[0.004651162790697683,0.0,0.0,0.0,0.0],"color":"#eb6834","thickness":1.5,"width":4}},{"type":"scatter","name":"relu (lr = 0.1)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.9767441860465116,0.9767441860465116,0.9906976744186047,0.9930232558139535,0.9883720930232558],"hovertemplate":"relu (lr = 0.1): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#1baf7a"},"line":{"width":2.0,"color":"#1baf7a"},"error_y":{"type":"data","array":[0.007354134093414813,0.007354134093414813,0.008701528806451041,0.005696487773914377,0.0],"color":"#1baf7a","thickness":1.5,"width":4}}],"layout":{"title":{"text":"Validation accuracy vs. hidden neurons","font":{"size":17,"color":"#0b0b0b"}},"legend":{"font":{"color":"#52514e"},"orientation":"h","y":-0.2},"margin":{"l":70,"r":30,"t":60,"b":80},"height":460,"font":{"family":"Inter, system-ui, -apple-system, Segoe UI, sans-serif","color":"#0b0b0b"},"paper_bgcolor":"#fcfcfb","plot_bgcolor":"#fcfcfb","hovermode":"x unified","xaxis":{"title":{"text":"Hidden neurons","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"yaxis":{"title":{"text":"Validation accuracy","font":{"size":13,"color":"#52514e"}},"tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false}},"config":{},"frames":null});
+        </script>
+    </div>
+</body>
+
+</html>

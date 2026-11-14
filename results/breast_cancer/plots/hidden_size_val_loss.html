@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+        
+</head>
+
+<body>
+    <div>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","name":"sigmoid (lr = 0.1)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.03772738682460057,0.03549363616879373,0.03138150099259933,0.03148658221623745,0.029361210451955277],"hovertemplate":"sigmoid (lr = 0.1): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#2a78d6"},"line":{"width":2.0,"color":"#2a78d6"},"error_y":{"type":"data","array":[0.0016917798693199748,0.0036476156183016667,0.0006920113495518063,0.0018710930097512151,0.0007932357018840531],"color":"#2a78d6","thickness":1.5,"width":4}},{"type":"scatter","name":"tanh (lr = 0.01)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.036479623705648646,0.03447026385475331,0.0333039846938172,0.03348282764845771,0.030246940478815827],"hovertemplate":"tanh (lr = 0.01): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#eb6834"},"line":{"width":2.0,"color":"#eb6834"},"error_y":{"type":"data","array":[0.003363414034639531,0.0023856672544151133,0.002245979022950166,0.0018484152160531142,0.002502550703164714],"color":"#eb6834","thickness":1.5,"width":4}},{"type":"scatter","name":"relu (lr = 0.1)","mode":"lines+markers","x":["2","4","8","16","32"],"y":[0.07789646345515336,0.051524966516235005,0.02582975885352511,0.019091584683098243,0.03740431003736058],"hovertemplate":"relu (lr = 0.1): %{y:.4f}\u003cextra\u003e\u003c/extra\u003e","marker":{"size":9,"color":"#1baf7a"},"line":{"width":2.0,"color":"#1baf7a"},"error_y":{"type":"data","array":[0.02385168559092346,0.017057833188894887,0.017771556817088977,0.008868680262054247,0.010739986738804759],"color":"#1baf7a","thickness":1.5,"width":4}}],"layout":{"title":{"text":"Validation loss vs. hidden neurons","font":{"size":17,"color":"#0b0b0b"}},"legend":{"font":{"color":"#52514e"},"orientation":"h","y":-0.2},"margin":{"l":70,"r":30,"t":60,"b":80},"height":460,"font":{"family":"Inter, system-ui, -apple-system, Segoe UI, sans-serif","color":"#0b0b0b"},"paper_bgcolor":"#fcfcfb","plot_bgcolor":"#fcfcfb","hovermode":"x unified","xaxis":{"title":{"text":"Hidden neurons","font":{"size":13,"color":"#52514e"}},"type":"category","tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false},"yaxis":{"title":{"text":"Validation loss","font":{"size":13,"color":"#52514e"}},"tickfont":{"size":12,"color":"#52514e"},"linecolor":"#e8e7e3","gridcolor":"#e8e7e3","zeroline":false}},"config":{},"frames":null});
+        </script>
+    </div>
+</body>
+
+</html>
