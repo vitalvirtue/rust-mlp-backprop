@@ -125,11 +125,22 @@ impl ConfusionMatrix {
             })
             .collect();
         let k = self.n_classes as f64;
+        let total = self.total().max(1) as f64;
+        let weighted = |f: fn(&ClassMetrics) -> f64| {
+            per_class
+                .iter()
+                .map(|m| f(m) * m.support as f64)
+                .sum::<f64>()
+                / total
+        };
         ClassificationReport {
             accuracy: self.accuracy(),
             macro_precision: per_class.iter().map(|m| m.precision).sum::<f64>() / k,
             macro_recall: per_class.iter().map(|m| m.recall).sum::<f64>() / k,
             macro_f1: per_class.iter().map(|m| m.f1).sum::<f64>() / k,
+            weighted_precision: weighted(|m| m.precision),
+            weighted_recall: weighted(|m| m.recall),
+            weighted_f1: weighted(|m| m.f1),
             per_class,
         }
     }
@@ -180,6 +191,12 @@ pub struct ClassificationReport {
     pub macro_recall: f64,
     /// Mean F1 over classes.
     pub macro_f1: f64,
+    /// Precision averaged over classes, weighted by support.
+    pub weighted_precision: f64,
+    /// Recall averaged over classes, weighted by support.
+    pub weighted_recall: f64,
+    /// F1 averaged over classes, weighted by support.
+    pub weighted_f1: f64,
 }
 
 impl fmt::Display for ClassificationReport {
@@ -201,6 +218,11 @@ impl fmt::Display for ClassificationReport {
             f,
             "{:<18} {:>9.4} {:>9.4} {:>9.4} {:>8}",
             "macro avg", self.macro_precision, self.macro_recall, self.macro_f1, total
+        )?;
+        writeln!(
+            f,
+            "{:<18} {:>9.4} {:>9.4} {:>9.4} {:>8}",
+            "weighted avg", self.weighted_precision, self.weighted_recall, self.weighted_f1, total
         )?;
         write!(f, "{:<18} {:>29.4} {:>8}", "accuracy", self.accuracy, total)
     }
@@ -274,6 +296,19 @@ mod tests {
         let cm = ConfusionMatrix::new(&[0, 1], &[0, 0], 2);
         assert_eq!(cm.precision(1), 0.0);
         assert_eq!(cm.f1(1), 0.0);
+    }
+
+    #[test]
+    fn weighted_average_uses_support() {
+        let names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let r = example().report(&names);
+        // Supports are 3, 2, 1.
+        let expected =
+            (3.0 * r.per_class[0].recall + 2.0 * r.per_class[1].recall + r.per_class[2].recall)
+                / 6.0;
+        assert!(close(r.weighted_recall, expected));
+        // Weighted recall always equals accuracy.
+        assert!(close(r.weighted_recall, r.accuracy));
     }
 
     #[test]
