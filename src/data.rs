@@ -17,6 +17,160 @@ pub const IRIS_FEATURES: [&str; 4] = [
     "petal_width_cm",
 ];
 
+/// Names of the 30 Breast Cancer Wisconsin (Diagnostic) features, in file
+/// order: ten cell-nucleus measurements, each given as the mean, the
+/// standard error (`se`) and the mean of the three largest values (`worst`).
+pub const BREAST_CANCER_FEATURES: [&str; 30] = [
+    "radius_mean",
+    "texture_mean",
+    "perimeter_mean",
+    "area_mean",
+    "smoothness_mean",
+    "compactness_mean",
+    "concavity_mean",
+    "concave_points_mean",
+    "symmetry_mean",
+    "fractal_dimension_mean",
+    "radius_se",
+    "texture_se",
+    "perimeter_se",
+    "area_se",
+    "smoothness_se",
+    "compactness_se",
+    "concavity_se",
+    "concave_points_se",
+    "symmetry_se",
+    "fractal_dimension_se",
+    "radius_worst",
+    "texture_worst",
+    "perimeter_worst",
+    "area_worst",
+    "smoothness_worst",
+    "compactness_worst",
+    "concavity_worst",
+    "concave_points_worst",
+    "symmetry_worst",
+    "fractal_dimension_worst",
+];
+
+/// Describes the column layout of a headerless CSV file.
+#[derive(Debug, Clone, Copy)]
+pub struct CsvFormat<'a> {
+    /// Names of the numeric feature columns, in file order.
+    pub feature_names: &'a [&'a str],
+    /// Index of the column that holds the class label.
+    pub label_column: usize,
+    /// Columns to skip entirely, such as a patient ID.
+    pub ignored_columns: &'a [usize],
+    /// Fixed class order as `(label in file, display name)` pairs; class `k`
+    /// is the `k`-th pair. `None` numbers classes in order of first
+    /// appearance and uses the raw label as the name.
+    pub classes: Option<&'a [(&'a str, &'a str)]>,
+}
+
+impl CsvFormat<'_> {
+    /// Total number of columns a valid line must have.
+    #[must_use]
+    pub fn n_columns(&self) -> usize {
+        self.feature_names.len() + 1 + self.ignored_columns.len()
+    }
+}
+
+/// UCI `iris.data`: four features, then the species name.
+pub const IRIS_FORMAT: CsvFormat<'static> = CsvFormat {
+    feature_names: &IRIS_FEATURES,
+    label_column: 4,
+    ignored_columns: &[],
+    classes: None,
+};
+
+/// UCI `wdbc.data`: patient ID, diagnosis (`M`/`B`), then 30 features.
+/// Benign is class 0 and malignant class 1, so "positive" means malignant.
+pub const BREAST_CANCER_FORMAT: CsvFormat<'static> = CsvFormat {
+    feature_names: &BREAST_CANCER_FEATURES,
+    label_column: 1,
+    ignored_columns: &[0],
+    classes: Some(&[("B", "benign"), ("M", "malignant")]),
+};
+
+/// The datasets this project knows how to load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DatasetKind {
+    /// UCI Iris: 150 samples, 4 features, 3 balanced classes.
+    Iris,
+    /// UCI Breast Cancer Wisconsin (Diagnostic): 569 samples, 30 features,
+    /// 2 imbalanced classes.
+    BreastCancer,
+}
+
+impl DatasetKind {
+    /// Human-readable name.
+    #[must_use]
+    pub fn display_name(self) -> &'static str {
+        match self {
+            DatasetKind::Iris => "Iris",
+            DatasetKind::BreastCancer => "Breast Cancer Wisconsin (Diagnostic)",
+        }
+    }
+
+    /// Short identifier used for output folders.
+    #[must_use]
+    pub fn slug(self) -> &'static str {
+        match self {
+            DatasetKind::Iris => "iris",
+            DatasetKind::BreastCancer => "breast_cancer",
+        }
+    }
+
+    /// Where the data file is expected by default.
+    #[must_use]
+    pub fn default_path(self) -> &'static str {
+        match self {
+            DatasetKind::Iris => "data/iris.data",
+            DatasetKind::BreastCancer => "data/wdbc.data",
+        }
+    }
+
+    /// Column layout of the file.
+    #[must_use]
+    pub fn format(self) -> CsvFormat<'static> {
+        match self {
+            DatasetKind::Iris => IRIS_FORMAT,
+            DatasetKind::BreastCancer => BREAST_CANCER_FORMAT,
+        }
+    }
+
+    /// Loads the dataset from `path`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Dataset::from_csv`].
+    pub fn load(self, path: impl AsRef<Path>) -> Result<Dataset, DataError> {
+        Dataset::from_csv(path, &self.format())
+    }
+}
+
+impl fmt::Display for DatasetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.slug())
+    }
+}
+
+/// Parses `iris` or `breast-cancer` (also `breast_cancer`, `wdbc`).
+impl std::str::FromStr for DatasetKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().replace('_', "-").as_str() {
+            "iris" => Ok(DatasetKind::Iris),
+            "breast-cancer" | "wdbc" => Ok(DatasetKind::BreastCancer),
+            other => Err(format!(
+                "unknown dataset `{other}` (expected iris or breast-cancer)"
+            )),
+        }
+    }
+}
+
 /// Errors that can occur while loading a dataset.
 #[derive(Debug)]
 pub enum DataError {
@@ -98,53 +252,67 @@ impl Dataset {
         }
     }
 
-    /// Parses a headerless CSV file whose last column is a string class label
-    /// and whose other columns are numeric features (the UCI Iris format).
-    /// Blank lines are skipped. Classes are numbered in order of first
-    /// appearance.
+    /// Parses a headerless CSV file laid out as described by `format`.
+    /// Blank lines and Windows line endings are handled.
     ///
     /// # Errors
     ///
     /// Returns a [`DataError`] if the file cannot be read, a line is malformed,
-    /// or there are no samples.
-    pub fn from_csv(path: impl AsRef<Path>, feature_names: &[&str]) -> Result<Self, DataError> {
+    /// a label is not one of `format.classes`, or there are no samples.
+    pub fn from_csv(path: impl AsRef<Path>, format: &CsvFormat<'_>) -> Result<Self, DataError> {
         let text = fs::read_to_string(path)?;
-        let n_features = feature_names.len();
+        let n_columns = format.n_columns();
+        let n_features = format.feature_names.len();
+
+        let mut class_names: Vec<String> = Vec::new();
+        let mut class_index: HashMap<String, usize> = HashMap::new();
+        if let Some(classes) = format.classes {
+            for (id, (raw, display)) in classes.iter().enumerate() {
+                class_index.insert((*raw).to_string(), id);
+                class_names.push((*display).to_string());
+            }
+        }
 
         let mut values = Vec::new();
         let mut labels = Vec::new();
-        let mut class_names: Vec<String> = Vec::new();
-        let mut class_index: HashMap<String, usize> = HashMap::new();
-
         for (line_no, line) in text.lines().enumerate() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
+            let parse_error = |message: String| DataError::Parse {
+                line: line_no + 1,
+                message,
+            };
             let fields: Vec<&str> = line.split(',').map(str::trim).collect();
-            if fields.len() != n_features + 1 {
-                return Err(DataError::Parse {
-                    line: line_no + 1,
-                    message: format!(
-                        "expected {} columns, found {}",
-                        n_features + 1,
-                        fields.len()
-                    ),
-                });
+            if fields.len() != n_columns {
+                return Err(parse_error(format!(
+                    "expected {n_columns} columns, found {}",
+                    fields.len()
+                )));
             }
-            for field in &fields[..n_features] {
-                let v: f64 = field.parse().map_err(|_| DataError::Parse {
-                    line: line_no + 1,
-                    message: format!("`{field}` is not a number"),
-                })?;
+            for (col, field) in fields.iter().enumerate() {
+                if col == format.label_column || format.ignored_columns.contains(&col) {
+                    continue;
+                }
+                let v: f64 = field
+                    .parse()
+                    .map_err(|_| parse_error(format!("`{field}` is not a number")))?;
                 values.push(v);
             }
-            let name = fields[n_features];
-            let next_id = class_names.len();
-            let id = *class_index.entry(name.to_string()).or_insert_with(|| {
-                class_names.push(name.to_string());
-                next_id
-            });
+            let raw = fields[format.label_column];
+            let id = match class_index.get(raw) {
+                Some(&id) => id,
+                None if format.classes.is_some() => {
+                    return Err(parse_error(format!("unknown class label `{raw}`")));
+                }
+                None => {
+                    let id = class_names.len();
+                    class_index.insert(raw.to_string(), id);
+                    class_names.push(raw.to_string());
+                    id
+                }
+            };
             labels.push(id);
         }
 
@@ -157,7 +325,11 @@ impl Dataset {
             features,
             labels,
             class_names,
-            feature_names.iter().map(|s| (*s).to_string()).collect(),
+            format
+                .feature_names
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
         ))
     }
 
@@ -167,7 +339,29 @@ impl Dataset {
     ///
     /// See [`Dataset::from_csv`].
     pub fn iris(path: impl AsRef<Path>) -> Result<Self, DataError> {
-        Self::from_csv(path, &IRIS_FEATURES)
+        Self::from_csv(path, &IRIS_FORMAT)
+    }
+
+    /// Loads the UCI Breast Cancer Wisconsin (Diagnostic) dataset (`wdbc.data`).
+    ///
+    /// # Errors
+    ///
+    /// See [`Dataset::from_csv`].
+    pub fn breast_cancer(path: impl AsRef<Path>) -> Result<Self, DataError> {
+        Self::from_csv(path, &BREAST_CANCER_FORMAT)
+    }
+
+    /// The most frequent class and the accuracy of always predicting it.
+    /// Any useful model must beat this baseline.
+    #[must_use]
+    pub fn majority_class(&self) -> (usize, f64) {
+        let counts = self.class_counts();
+        let (class, &count) = counts
+            .iter()
+            .enumerate()
+            .max_by_key(|&(_, c)| *c)
+            .expect("dataset has at least one class");
+        (class, count as f64 / self.len() as f64)
     }
 
     /// Number of samples.
@@ -437,9 +631,66 @@ mod tests {
         path
     }
 
+    fn xy_format() -> CsvFormat<'static> {
+        CsvFormat {
+            feature_names: &["x", "y"],
+            label_column: 2,
+            ignored_columns: &[],
+            classes: None,
+        }
+    }
+
+    #[test]
+    fn breast_cancer_style_file_skips_id_and_maps_classes() {
+        let format = CsvFormat {
+            feature_names: &["a", "b"],
+            label_column: 1,
+            ignored_columns: &[0],
+            classes: Some(&[("B", "benign"), ("M", "malignant")]),
+        };
+        let path = write_temp("wdbc", "842302,M,1.5,2.5\n842517,B,3.5,4.5\n");
+        let ds = Dataset::from_csv(&path, &format).unwrap();
+        fs::remove_file(path).ok();
+        assert_eq!(ds.class_names(), &["benign", "malignant"]);
+        assert_eq!(ds.labels(), &[1, 0]);
+        assert_eq!(ds.features().as_slice(), &[1.5, 2.5, 3.5, 4.5]);
+    }
+
+    #[test]
+    fn unknown_label_is_rejected_when_classes_are_fixed() {
+        let path = write_temp("unknown", "1,X,1.0,2.0\n");
+        let err = Dataset::from_csv(&path, &BREAST_CANCER_FORMAT).unwrap_err();
+        fs::remove_file(path).ok();
+        // 4 columns instead of 32 is reported first; use a correct width:
+        assert!(matches!(err, DataError::Parse { line: 1, .. }));
+        let row = format!("1,X,{}\n", vec!["0.5"; 30].join(","));
+        let path = write_temp("unknown2", &row);
+        let err = Dataset::from_csv(&path, &BREAST_CANCER_FORMAT).unwrap_err();
+        fs::remove_file(path).ok();
+        assert!(err.to_string().contains("unknown class label `X`"), "{err}");
+    }
+
+    #[test]
+    fn majority_class_baseline() {
+        let ds = toy(); // labels 0,1,0,2,1,2: a three-way tie, each class is 2/6
+        let (_, acc) = ds.majority_class();
+        assert!((acc - 2.0 / 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn dataset_kind_parses_aliases() {
+        assert_eq!(
+            "breast_cancer".parse::<DatasetKind>(),
+            Ok(DatasetKind::BreastCancer)
+        );
+        assert_eq!("WDBC".parse::<DatasetKind>(), Ok(DatasetKind::BreastCancer));
+        assert_eq!("iris".parse::<DatasetKind>(), Ok(DatasetKind::Iris));
+        assert!("mnist".parse::<DatasetKind>().is_err());
+    }
+
     fn toy() -> Dataset {
         let path = write_temp("toy", "1,2,a\n3,4,b\n\n5,6,a\r\n7,8,c\n9,10,b\n11,12,c\n");
-        let ds = Dataset::from_csv(&path, &["x", "y"]).unwrap();
+        let ds = Dataset::from_csv(&path, &xy_format()).unwrap();
         fs::remove_file(path).ok();
         ds
     }
@@ -456,7 +707,7 @@ mod tests {
     #[test]
     fn reports_bad_number_with_line_number() {
         let path = write_temp("bad", "1,2,a\n1,oops,b\n");
-        let err = Dataset::from_csv(&path, &["x", "y"]).unwrap_err();
+        let err = Dataset::from_csv(&path, &xy_format()).unwrap_err();
         fs::remove_file(path).ok();
         assert!(matches!(err, DataError::Parse { line: 2, .. }), "{err}");
     }
@@ -464,14 +715,14 @@ mod tests {
     #[test]
     fn reports_wrong_column_count() {
         let path = write_temp("cols", "1,2,3,a\n");
-        let err = Dataset::from_csv(&path, &["x", "y"]).unwrap_err();
+        let err = Dataset::from_csv(&path, &xy_format()).unwrap_err();
         fs::remove_file(path).ok();
         assert!(matches!(err, DataError::Parse { line: 1, .. }));
     }
 
     #[test]
     fn missing_file_is_io_error() {
-        let err = Dataset::from_csv("definitely/not/here.csv", &["x"]).unwrap_err();
+        let err = Dataset::from_csv("definitely/not/here.csv", &xy_format()).unwrap_err();
         assert!(matches!(err, DataError::Io(_)));
     }
 
